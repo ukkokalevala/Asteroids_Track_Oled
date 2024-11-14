@@ -1,0 +1,113 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// WiFi credentials
+const char* ssid = "yourSSID";
+const char* password = "yourPASSWORD";
+
+// NASA API details
+const char* api_key = "YUOR API KEY HERE";
+String url = "https://api.nasa.gov/neo/rest/v1/feed?start_date=2024-11-17&end_date=2024-11-17&api_key=" + String(api_key);
+
+const int displayTime = 3000;  // Time in ms to display each page
+int currentIndex = 0;
+
+struct AsteroidData {
+  String name;
+  String date;
+  float miss_distance;
+  float velocity;
+};
+
+AsteroidData asteroids[5];  // Array to store up to 5 asteroid entries
+int asteroidCount = 0;      // Number of asteroids retrieved
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin(7, 6);
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    for (;;);
+  }
+  display.clearDisplay();
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("Connected to WiFi");
+
+  fetchAsteroidData();
+}
+
+void loop() {
+  if (asteroidCount > 0) {
+    displayAsteroid(currentIndex);
+    currentIndex = (currentIndex + 1) % asteroidCount;
+    delay(displayTime);
+  }
+}
+
+void fetchAsteroidData() {
+  HTTPClient http;
+  http.begin(url);
+  int httpCode = http.GET();
+
+  if (httpCode == 200) {
+    Serial.println("HTTP request successful!");
+    String payload = http.getString();
+
+    DynamicJsonDocument doc(8192);
+    DeserializationError error = deserializeJson(doc, payload);
+
+    if (!error) {
+      JsonArray neos = doc["near_earth_objects"]["2024-11-17"];
+
+      for (JsonObject neo : neos) {
+        if (asteroidCount < 5) {
+          asteroids[asteroidCount].name = neo["name"].as<String>();
+          asteroids[asteroidCount].date = neo["close_approach_data"][0]["close_approach_date"].as<String>();
+          asteroids[asteroidCount].miss_distance = neo["close_approach_data"][0]["miss_distance"]["kilometers"].as<float>();
+          asteroids[asteroidCount].velocity = neo["close_approach_data"][0]["relative_velocity"]["kilometers_per_hour"].as<float>();
+          asteroidCount++;
+        }
+      }
+    } else {
+      Serial.print("JSON parsing failed: ");
+      Serial.println(error.c_str());
+    }
+  } else {
+    Serial.printf("HTTP Response code: %d\n", httpCode);
+  }
+  http.end();
+}
+
+void displayAsteroid(int index) {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  
+  display.print("Asteroid Name: ");
+  display.println(asteroids[index].name);
+  
+  display.print("Close Approach Date: ");
+  display.println(asteroids[index].date);
+  
+  display.print("Miss Distance (km): ");
+  display.println(asteroids[index].miss_distance, 2);
+  
+  display.print("Velocity (km/h): ");
+  display.println(asteroids[index].velocity, 2);
+
+  display.display();
+}
