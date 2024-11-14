@@ -1,0 +1,68 @@
+include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include "secrets.h"
+
+//const char* ssid = "yourSSID";
+//const char* password = "yourPASSWORD";
+
+void setup() {
+  Serial.begin(115200);
+  
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nConnected to WiFi");
+
+  HTTPClient http;
+  //String url = "https://api.nasa.gov/neo/rest/v1/feed?start_date=2024-11-15&end_date=2024-11-16&api_key=ENTER YOUR API HERE";
+  String url = "https://api.nasa.gov/neo/rest/v1/feed?start_date=2024-11-17&end_date=2024-11-17&api_key=ENTER YOUR API HERE";
+  
+  //String url = "https://api.nasa.gov/neo/rest/v1/feed?start_date=2024-11-25&end_date=2024-11-26&api_key=ENTER YOUR API HERE";
+  //String url = "https://api.nasa.gov/neo/rest/v1/feed?start_date=2024-12-06&end_date=2024-12-07&api_key=ENTER YOUR API HERE";
+
+  http.begin(url);
+  int httpCode = http.GET();
+
+  if (httpCode == 200) {
+    Serial.println("HTTP request successful!");
+    String payload = http.getString();
+
+    DynamicJsonDocument doc(8192);
+    DeserializationError error = deserializeJson(doc, payload);
+
+    if (!error) {
+      JsonArray neos = doc["near_earth_objects"]["2024-11-17"];
+      
+      for (JsonObject neo : neos) {
+        const char* name = neo["name"];
+        const char* date = neo["close_approach_data"][0]["close_approach_date"];
+        float miss_distance = neo["close_approach_data"][0]["miss_distance"]["kilometers"].as<float>();
+        float velocity = neo["close_approach_data"][0]["relative_velocity"]["kilometers_per_hour"].as<float>();
+
+        Serial.println("Asteroid Name:");
+        Serial.println(name);
+        Serial.println("Close Approach Date:");
+        Serial.println(date);
+        Serial.print("Miss Distance (km): ");
+        Serial.println(miss_distance);
+        Serial.print("Velocity (km/h): ");
+        Serial.println(velocity);
+        Serial.println();
+      }
+    } else {
+      Serial.print("JSON parsing failed: ");
+      Serial.println(error.c_str());
+    }
+  } else {
+    Serial.printf("HTTP Response code: %d\n", httpCode);
+  }
+  
+  http.end();
+}
+
+void loop() {
+  // No loop content needed for this example
+}
